@@ -22,8 +22,7 @@ Cropper is a lightweight and interpretable deep ensemble framework for detecting
 | `Cropper_Betel.py` | Main Cropper training + evaluation script for **betel dataset** |
 | `Cropper_Cabbage.py` | Main Cropper training + evaluation script for **cabbage dataset** |
 | `Cropper_ChineseCabbage.py` | Main Cropperscript for **Chinese cabbage dataset** |
-| `Guava_Betel.py` | Guava baseline implementation for **betel** |
-| `Guava_Rice.py` | Guava baseline implementation for **rice** |
+| `Guava.py` | Guava baseline implementation |
 | `LeafNext_Betel.py` | LeafNext baseline implementation for **betel** |
 | `LeafNext_Rice.py` | LeafNext baseline implementation for **rice** |
 | `PlantDet_Betel.py` | PlantDet benchmark model for **betel** |
