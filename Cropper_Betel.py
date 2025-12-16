@@ -11,13 +11,12 @@ import matplotlib.pyplot as plt
 import os
 from warnings import filterwarnings
 import random
-from sklearn.metrics import confusion_matrix, roc_auc_score
+from sklearn.metrics import confusion_matrix, roc_auc_score, matthews_corrcoef
 import seaborn as sn
 from tqdm import tqdm
 from torch.nn import init
 
 filterwarnings('ignore')
-
 
 
 def set_seed(seed):
@@ -29,22 +28,19 @@ def set_seed(seed):
 
 
 seed = np.random.randint(1, 10000)
-
 print(f"Random Seed: {seed}")
-
 set_seed(seed)
 
-
-
-train_dir = "D:/FYPdataset/Unique2/Betel2/Train"
-val_dir = "D:/FYPdataset/Unique2/Betel2/Valid"
-test_dir = "D:/FYPdataset/Unique2/Betel2/Test"
+# input the dataset address
+train_dir = ""
+val_dir = ""
+test_dir = ""
 
 class_names = ['Healthy Betel Leaf','Unhealthy Betel Leaf']
 labels = ['Healthy Betel Leaf','Unhealthy Betel Leaf']
 
 
-class RiceLeafDataset(Dataset):
+class PlantDataset(Dataset):
     def __init__(self, data_dir, transform=None):
         self.data_dir = data_dir
         self.transform = transform
@@ -72,7 +68,6 @@ class RiceLeafDataset(Dataset):
         return self.image_paths[idx]
 
 
-
 train_transform = transforms.Compose([
     transforms.Resize((299, 299)),
     transforms.RandomHorizontalFlip(),
@@ -87,10 +82,9 @@ val_transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-
-train_dataset = RiceLeafDataset(train_dir, transform=train_transform)
-val_dataset = RiceLeafDataset(val_dir, transform=val_transform)
-test_dataset = RiceLeafDataset(test_dir, transform=val_transform)
+train_dataset = PlantDataset(train_dir, transform=train_transform)
+val_dataset = PlantDataset(val_dir, transform=val_transform)
+test_dataset = PlantDataset(test_dir, transform=val_transform)
 batch_size = 4
 
 
@@ -100,9 +94,10 @@ def custom_collate(batch):
     paths = [item[2] for item in batch]
     return images, labels, paths
 
+
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False,collate_fn=custom_collate)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=custom_collate)
 
 
 class ChannelAttention(nn.Module):
@@ -142,7 +137,6 @@ class SpatialAttention(nn.Module):
 
 
 class CBAMBlock(nn.Module):
-
     def __init__(self, channel=512, reduction=16, kernel_size=49):
         super().__init__()
         self.ca = ChannelAttention(channel=channel, reduction=reduction)
@@ -170,27 +164,23 @@ class CBAMBlock(nn.Module):
         return out + residual
 
 
-
 class EnsembleModel(nn.Module):
     def __init__(self, num_classes=2):
         super(EnsembleModel, self).__init__()
-        self.model1 = models.inception_v3(pretrained=True)
-        self.model1.fc = nn.Identity()
-        self.model2 = models.efficientnet_v2_s(pretrained=True)
+        self.model1 = models.densenet121(pretrained=True)
+        self.model1.classifier = nn.Identity()
+        self.model2 = models.efficientnet_b0(pretrained=True)
         self.model2.classifier = nn.Identity()
-        self.model3 = models.resnet34(pretrained=True)
+        self.model3 = models.resnet18(pretrained=True)
         self.model3.fc = nn.Identity()
 
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(1280, 512)
+        self.fc3 = nn.Linear(512, 512)
 
-        self.fc1 = nn.Linear(2048, 512)  # InceptionV3
-        self.fc2 = nn.Linear(1280, 512)  # EfficientNetV2
-        self.fc3 = nn.Linear(512, 512)   # ResNet34
-
-
-        self.attn1 = CBAMBlock(512,reduction=16)
-        self.attn2 = CBAMBlock(512,reduction=16)
-        self.attn3 = CBAMBlock(512,reduction=16)
-
+        self.attn1 = CBAMBlock(512, reduction=16)
+        self.attn2 = CBAMBlock(512, reduction=16)
+        self.attn3 = CBAMBlock(512, reduction=16)
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
@@ -204,7 +194,7 @@ class EnsembleModel(nn.Module):
         )
 
     def forward(self, x):
-        out1 = self.model1(x)[0] if self.training else self.model1(x)
+        out1 = self.model1(x)
         out2 = self.model2(x)
         out3 = self.model3(x)
 
@@ -216,7 +206,7 @@ class EnsembleModel(nn.Module):
         out2 = self.attn2(out2.unsqueeze(2).unsqueeze(3))
         out3 = self.attn3(out3.unsqueeze(2).unsqueeze(3))
 
-        out = out1+out2+out3
+        out = out1 + out2 + out3
 
         return self.classifier(out)
 
@@ -246,7 +236,6 @@ param_groups = [
 optimizer = optim.Adam(param_groups, lr=1e-5)
 
 
-
 def train_epoch(model, loader, criterion, optimizer):
     model.train()
     running_loss = 0.0
@@ -266,13 +255,12 @@ def train_epoch(model, loader, criterion, optimizer):
     return running_loss / len(loader), 100. * correct / total
 
 
-
 def evaluate(model, loader):
     model.eval()
     correct = 0
     total = 0
     with torch.no_grad():
-        for inputs, batch_labels,_ in loader:
+        for inputs, batch_labels, _ in loader:
             inputs, batch_labels = inputs.to(device), batch_labels.to(device)
             outputs = model(inputs)
 
@@ -282,16 +270,19 @@ def evaluate(model, loader):
     return 100. * correct / total
 
 
-def calculate_metrics(y_true, y_pred):
+def calculate_metrics(y_true, y_pred, y_probs=None):
+
     if torch.is_tensor(y_true):
         y_true = y_true.cpu().numpy()
     if torch.is_tensor(y_pred):
         y_pred = y_pred.cpu().numpy()
+
     cm = confusion_matrix(y_true, y_pred)
     precision_list = []
     recall_list = []
     f1_list = []
     specificity_list = []
+
     for i in range(len(labels)):
         TP = cm[i, i]
         FP = cm[:, i].sum() - TP
@@ -308,18 +299,34 @@ def calculate_metrics(y_true, y_pred):
         f1_list.append(f1)
         specificity_list.append(specificity)
 
+
+    mcc = matthews_corrcoef(y_true, y_pred)
+
+
+    auroc = None
+    if y_probs is not None and len(np.unique(y_true)) > 1:
+        try:
+            auroc = roc_auc_score(y_true, y_probs[:, 1])
+        except Exception as e:
+            print(f"Error: {e}")
+            auroc = 0.0
+
     return {
         'precision': np.mean(precision_list),
         'recall': np.mean(recall_list),
         'f1': np.mean(f1_list),
-        'specificity': np.mean(specificity_list)
+        'specificity': np.mean(specificity_list),
+        'mcc': mcc,
+        'auroc': auroc,
+        'confusion_matrix': cm
     }
 
 
 history = {
     'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
     'train_precision': [], 'train_recall': [], 'train_f1': [], 'train_specificity': [],
-    'val_precision': [], 'val_recall': [], 'val_f1': [], 'val_specificity': []
+    'val_precision': [], 'val_recall': [], 'val_f1': [], 'val_specificity': [],
+    'val_mcc': [], 'val_auroc': []
 }
 
 
@@ -331,10 +338,10 @@ def evaluate_with_metrics(model, loader, criterion):
     all_probs = []
     all_files = []
 
-    with (torch.no_grad()):
+    with torch.no_grad():
         for inputs, batch_labels, paths in loader:
             inputs = inputs.to(device)
-            batch_labels= batch_labels.to(device)
+            batch_labels = batch_labels.to(device)
             outputs = model(inputs)
             loss = criterion(outputs, batch_labels)
             running_loss += loss.item()
@@ -347,7 +354,8 @@ def evaluate_with_metrics(model, loader, criterion):
             all_true.extend(batch_labels.cpu().numpy())
             all_files.extend(paths)
 
-    metrics = calculate_metrics(np.array(all_true), np.array(all_preds))
+
+    metrics = calculate_metrics(np.array(all_true), np.array(all_preds), np.array(all_probs))
 
     correct = (np.array(all_preds) == np.array(all_true)).sum()
     metrics['accuracy'] = 100.0 * correct / len(all_true)
@@ -357,15 +365,74 @@ def evaluate_with_metrics(model, loader, criterion):
                                labels[all_true[i]],
                                all_preds[i])
                               for i in wrong_indices]
-    all_probs = np.array(all_probs)
-    metrics['auroc'] = roc_auc_score(all_true, all_probs[:, 1])
+
     return running_loss / len(loader), metrics
+
+
+def print_confusion_matrix_with_metrics(cm, metrics_dict=None):
+
+    print("\n" + "=" * 80)
+    print("CONFUSION MATRIX")
+    print("=" * 80)
+
+
+    print(f"{'True \\ Predicted':<25}", end="")
+    for label in labels:
+        print(f"{label[:15]:<15}", end="")
+    print()
+
+    print("-" * (25 + len(labels) * 15))
+
+
+    for i, true_label in enumerate(labels):
+        print(f"{true_label:<25}", end="")
+        for j in range(len(labels)):
+            print(f"{cm[i, j]:<15}", end="")
+        print()
+
+    print("-" * (25 + len(labels) * 15))
+
+
+    if metrics_dict:
+        print("\n" + "=" * 80)
+        print("PERFORMANCE METRICS")
+        print("=" * 80)
+        print(f"Accuracy:      {metrics_dict.get('accuracy', 0):.2f}%")
+        print(f"Precision:     {metrics_dict.get('precision', 0):.4f}")
+        print(f"Recall:        {metrics_dict.get('recall', 0):.4f}")
+        print(f"F1 Score:      {metrics_dict.get('f1', 0):.4f}")
+        print(f"Specificity:   {metrics_dict.get('specificity', 0):.4f}")
+        print(f"AUROC:         {metrics_dict.get('auroc', 0):.4f}")
+        print(f"MCC:           {metrics_dict.get('mcc', 0):.4f}")
+
+
+    print("\n" + "=" * 80)
+    print("PER-CLASS METRICS")
+    print("=" * 80)
+
+
+    for i, label in enumerate(labels):
+        TP = cm[i, i]
+        FP = cm[:, i].sum() - TP
+        FN = cm[i, :].sum() - TP
+        TN = cm.sum() - (TP + FP + FN)
+
+        precision = TP / (TP + FP + 1e-7)
+        recall = TP / (TP + FN + 1e-7)
+        f1 = 2 * (precision * recall) / (precision + recall + 1e-7)
+
+        print(f"\nClass: {label}")
+        print(f"  TP: {TP}, FP: {FP}, FN: {FN}, TN: {TN}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall:    {recall:.4f}")
+        print(f"  F1 Score:  {f1:.4f}")
 
 
 num_epochs = 100
 best_val_loss = float('inf')
 patience = 5
 patience_counter = 0
+
 for epoch in tqdm(range(num_epochs)):
     model.train()
     train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer)
@@ -376,29 +443,57 @@ for epoch in tqdm(range(num_epochs)):
     history['val_loss'].append(val_loss)
     history['val_acc'].append(val_acc)
 
-    # Calculate others
-    train_metrics = calculate_metrics(
-        np.array([label for _, label, _ in train_dataset]),
-        np.array([model(input.unsqueeze(0).to(device)).argmax().cpu() for input, _, _ in train_dataset])
-    )
-    history['train_precision'].append(train_metrics['precision'])
-    history['train_recall'].append(train_metrics['recall'])
-    history['train_f1'].append(train_metrics['f1'])
-    history['train_specificity'].append(train_metrics['specificity'])
+
+    if epoch == 0 or epoch == num_epochs - 1:
+        train_preds = []
+        train_true = []
+        train_probs = []
+
+        model.eval()
+        with torch.no_grad():
+            for inputs, batch_labels, _ in train_loader:
+                inputs = inputs.to(device)
+                outputs = model(inputs)
+                probs = F.softmax(outputs, dim=1)
+                _, predicted = outputs.max(1)
+
+                train_probs.extend(probs.cpu().numpy())
+                train_preds.extend(predicted.cpu().numpy())
+                train_true.extend(batch_labels.cpu().numpy())
+
+        train_metrics = calculate_metrics(np.array(train_true), np.array(train_preds), np.array(train_probs))
+        history['train_precision'].append(train_metrics['precision'])
+        history['train_recall'].append(train_metrics['recall'])
+        history['train_f1'].append(train_metrics['f1'])
+        history['train_specificity'].append(train_metrics['specificity'])
+    else:
+
+        history['train_precision'].append(0)
+        history['train_recall'].append(0)
+        history['train_f1'].append(0)
+        history['train_specificity'].append(0)
+
+
     history['val_precision'].append(val_metrics['precision'])
     history['val_recall'].append(val_metrics['recall'])
     history['val_f1'].append(val_metrics['f1'])
     history['val_specificity'].append(val_metrics['specificity'])
+    history['val_mcc'].append(val_metrics['mcc'])
+    history['val_auroc'].append(val_metrics['auroc'])
+
     print(f'Epoch {epoch + 1}/{num_epochs}:')
     print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
     print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
     print(f'Val Metrics - Precision: {val_metrics["precision"]:.4f}, Recall: {val_metrics["recall"]:.4f}, '
-          f'F1: {val_metrics["f1"]:.4f}, Specificity: {val_metrics["specificity"]:.4f}')
+          f'F1: {val_metrics["f1"]:.4f}, Specificity: {val_metrics["specificity"]:.4f}, '
+          f'MCC: {val_metrics["mcc"]:.4f}, AUROC: {val_metrics["auroc"]:.4f}')
+
     # Early stopping
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         patience_counter = 0
-        torch.save(model.state_dict(), 'best_model_Betel_SUM_loss.pth')
+        torch.save(model.state_dict(), 'Betel.pth')
+
     else:
         patience_counter += 1
         if patience_counter >= patience:
@@ -406,95 +501,27 @@ for epoch in tqdm(range(num_epochs)):
             break
 
 
-def plot_metrics(history):
-    fig, ax = plt.subplots(1, 2, figsize=(20, 5))
-    ax = ax.ravel()
-    metrics = ['precision', 'recall']
-    for i, met in enumerate(metrics):
-        ax[i].plot(history[f'train_{met}'])
-        ax[i].plot(history[f'val_{met}'])
-        ax[i].set_title(f'Model {met.capitalize()}')
-        ax[i].set_xlabel('epochs')
-        ax[i].set_ylabel(met)
-        ax[i].grid(color='#e0e0eb')
-        ax[i].legend(['train', 'val'])
-    plt.savefig('model_precision_recall.png', dpi=1200)
-    plt.show()
-    fig, ax = plt.subplots(1, 2, figsize=(20, 5))
-    ax = ax.ravel()
-    metrics = ['acc', 'loss']
-    for i, met in enumerate(metrics):
-        ax[i].plot(history[f'train_{met}'])
-        ax[i].plot(history[f'val_{met}'])
-        ax[i].set_title(f'Model {met.capitalize()}')
-        ax[i].set_xlabel('epochs')
-        ax[i].set_ylabel(met)
-        ax[i].grid(color='#e0e0eb')
-        ax[i].legend(['train', 'val'])
-    plt.savefig('model_accuracy_loss.png', dpi=1200)
-    plt.show()
-    fig, ax = plt.subplots(1, 2, figsize=(20, 5))
-    ax = ax.ravel()
-    metrics = ['f1', 'specificity']
-    for i, met in enumerate(metrics):
-        ax[i].plot(history[f'train_{met}'])
-        ax[i].plot(history[f'val_{met}'])
-        ax[i].set_title(f'Model {met.upper()}')
-        ax[i].set_xlabel('epochs')
-        ax[i].set_ylabel(met)
-        ax[i].grid(color='#e0e0eb')
-        ax[i].legend(['train', 'val'])
-
-    plt.savefig('model_f1_specificity.png', dpi=1200)
-    plt.show()
+model.load_state_dict(torch.load('Betel.pth'))
+print("\n" + "=" * 70)
+print("TEST SET EVALUATION")
+print("=" * 70)
 
 
-# CM
-def plot_confusion_matrix(model, test_loader):
-    model.eval()
-    all_preds = []
-    all_true = []
-
-    with torch.no_grad():
-        for inputs, labels, _ in test_loader:
-            inputs = inputs.to(device)
-            outputs = model(inputs)
-            _, predicted = outputs.max(1)
-            all_preds.extend(predicted.cpu().numpy())
-            all_true.extend(labels.numpy())
-
-    cm = confusion_matrix(all_true, all_preds)
-    class_labels = ['Healthy Betel Leaf','Unhealthy Betel Leaf']
-
-    df_cm = pd.DataFrame(
-        cm,
-        index=class_labels,
-        columns=class_labels
-    )
-
-    plt.figure(figsize=(10, 10))
-    sn.set_theme(font_scale=1.2)
-    sn.heatmap(df_cm, annot=True, cmap='summer', fmt='g')
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-    plt.title('Confusion Matrix')
-    plt.tight_layout()
-    plt.savefig('model_confusion_matrix.png', dpi=200)
-    plt.show()
-
-
-plot_metrics(history)
-plot_confusion_matrix(model, test_loader)
-# Test Evaluation
-model.load_state_dict(torch.load('best_model_Betel_SUM_loss.pth'))
 test_loss, test_metrics = evaluate_with_metrics(model, test_loader, criterion)
 test_acc = evaluate(model, test_loader)
-print("\nFinal Test Results:")
+test_metrics['accuracy'] = test_acc
+
+print("\n" + "=" * 70)
+print("FINAL TEST RESULTS")
+print("=" * 70)
 print(f"Test Accuracy: {test_acc:.2f}%")
 print(f"Test Precision: {test_metrics['precision']:.4f}")
 print(f"Test Recall: {test_metrics['recall']:.4f}")
 print(f"Test F1 Score: {test_metrics['f1']:.4f}")
 print(f"Test Specificity: {test_metrics['specificity']:.4f}")
 print(f"Test AUROC: {test_metrics['auroc']:.4f}")
+print(f"Test MCC: {test_metrics['mcc']:.4f}")
+print("=" * 70)
+
 
 
