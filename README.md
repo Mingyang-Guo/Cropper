@@ -6,11 +6,11 @@ Cropper is a lightweight and interpretable deep ensemble framework for detecting
 
 ## 🌟 Key Features
 
-- 🔁 Multi-backbone ensemble (InceptionV3, ResNet34, EfficientNetV2-S)
-- 🧠 Attention-guided feature refinement (Channel & Spatial attention)
+- 🔁 Multi-backbone ensemble (DenseNet121, ResNet18, EfficientNetB0)
+- 🧠 Attention-guided feature refinement 
 - 🖼️ Visualization with class-discriminative attention maps
-- 🌾 Supports multiple crops: rice, betel, cabbage, Chinese cabbage
-- ⚙️ Includes benchmark models: PlantDet, Guava, LeafNext for comparison
+- 🌾 Supports multiple crops: rice, betel, cabbage, Chinese cabbage, Apple, Pumpkin and Tomato
+- ⚙️ Includes benchmark models: PlantDet, Guava(DenseNet169), LeafconvNext, ViT for comparison
 - 📉 Ablation-friendly architecture and reproducible evaluation protocol
 
 
@@ -22,6 +22,8 @@ Cropper is a lightweight and interpretable deep ensemble framework for detecting
 | `Cropper_Betel.py` | Main Cropper training + evaluation script for **betel dataset** |
 | `Cropper_Cabbage.py` | Main Cropper training + evaluation script for **cabbage dataset** |
 | `Cropper_ChineseCabbage.py` | Main Cropperscript for **Chinese cabbage dataset** |
+| `ViT_Tiny.py` | ViT_Tiny baseline implementation |
+| `ViT_Base.py` | ViT_Base baseline implementation |
 | `Guava.py` | Guava baseline implementation |
 | `LeafNext_Betel.py` | LeafNext baseline implementation for **betel** |
 | `LeafNext_Rice.py` | LeafNext baseline implementation for **rice** |
@@ -36,9 +38,12 @@ Cropper is a lightweight and interpretable deep ensemble framework for detecting
 
 ## 🧪 Datasets
 
-The model supports **4 plant leaf datasets** (publicly available):
+The model supports **7 plant leaf datasets** (publicly available):
 
 - **Rice**: Multi-class (6 disease types) 
+- **Apple**: Multi-class (5 disease types) 
+- **Pumpkin**: Multi-class (5 disease types) 
+- **Tomato**: Multi-class (10 disease types) 
 - **Betel**: Binary classification (healthy vs. unhealthy)
 - **Cabbage**: Binary classification (nutrient deficiency vs. healthy)
 - **Chinese Cabbage**: Binary classification (Botanical Leaf Spot)
