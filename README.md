@@ -27,7 +27,7 @@ Cropper is a lightweight and interpretable deep ensemble framework for detecting
 | `LeafNext_Rice.py` | LeafNext baseline implementation for **rice** |
 | `PlantDet_Betel.py` | PlantDet benchmark model for **betel** |
 | `PlantDet_Rice.py` | PlantDet benchmark model for **rice** |
-| `Visual.py` | Script for generating and saving attention visualizations (heatmaps) |
+| `Visualization.py` | Script for generating and saving attention visualizations (heatmaps) |
 | `dataset_Info.xlsx` | Summary of all datasets used (image count, labels, splits, etc.) |
 | `Results.xlsx` | Evaluation metrics and performance comparison tables |
 | `README.md` | You are here. Project overview and usage instructions. |
